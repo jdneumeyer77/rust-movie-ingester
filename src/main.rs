@@ -1,25 +1,13 @@
-use chrono::{NaiveDate, ParseError};
-use csv::{StringRecord, Trim, ErrorKind};
+use chrono::NaiveDate;
 use fs::File;
-use serde::Deserialize;
-use std::{collections::HashSet, env, error::Error, fmt::Display, fs, io::BufReader, borrow::BorrowMut};
+use std::{collections::HashSet, env, fs, io::BufReader};
 
+// TODO: reorganize.
 
-#[derive(Debug, Deserialize)]
-struct MovieRowRaw {
-    id: String,
-    genres: String,
-    production_companies: String,
-    release_date: NaiveDate,
-    budget: i128,
-    revenue: i128,
-    #[serde(deserialize_with = "csv::invalid_option", rename = "popularity")]
-    avg_populatarity: Option<f32>,
-    status: String,
-}
+pub mod parsing;
 
 #[derive(Debug)]
-struct MovieRow {
+pub struct MovieRow {
     id: String,
     genres: HashSet<String>,
     production_companies: HashSet<String>,
@@ -28,51 +16,26 @@ struct MovieRow {
     revenue: i128,
     profit: i128,
     avg_populatarity: f32,
-    status: String,
+    status: Status,
 }
 
-impl MovieRowRaw {
-    fn validated_movie_row(&self, last_run: &Option<NaiveDate>) -> Option<MovieRow> {
-        if self.revenue > 0
-           && last_run.map(|x| self.release_date <= x).unwrap_or(true)
-            && self.status.to_lowercase().contains("released")
-        {
-            // pull genres and production companies.
-            Some(MovieRow {
-                id: self.id.clone(),
-                genres: convert_json_to_set(&self.genres),
-                production_companies: convert_json_to_set(&self.production_companies),
-                release_date: self.release_date,
-                budget: self.budget,
-                revenue: self.revenue,
-                avg_populatarity: self.avg_populatarity.unwrap_or(0.0),
-                status: self.status.clone(),
-                profit: self.revenue - self.budget,
-            })
+#[derive(PartialEq, Debug, Hash, Eq)]
+enum Status {
+    Released,
+    Other,
+}
+
+impl Status {
+    fn from_str(enum_str: &str) -> Status {
+        if enum_str.is_empty() {
+            Self::Other
         } else {
-            None
+            match enum_str.to_lowercase().as_str() {
+                "released" => Self::Released,
+                _ => Self::Other,
+            }
         }
     }
-}
-
-fn convert_json_to_set(s: &str) -> HashSet<String> {
-    let s = s.replace("'", "\"");
-    //println!("raw: {}", s);
-    let parsed = json::parse(&s);
-
-    parsed
-        .map(|v| {
-            v.members()
-                .flat_map(|obj| 
-                    obj["id"].as_i32().map(|x| x.to_string())
-                )
-                .collect()
-        })
-        .unwrap_or(HashSet::new())
-}
-
-fn from_record(record: &StringRecord, headers: &StringRecord) -> Result<MovieRowRaw, csv::Error> {       
-    record.deserialize(Some(&headers))
 }
 
 fn main() {
@@ -83,24 +46,30 @@ fn main() {
     println!("opened file for reading: {}", &config.input_file);
     let reader = BufReader::new(file);
     let mut reader = csv::ReaderBuilder::new()
-   // .has_headers(true)
-   // .trim(Trim::All)
-    .from_reader(reader);
+        // .has_headers(true)
+        // .trim(Trim::All)
+        .from_reader(reader);
     println!("created reader!");
 
     let headers = reader.headers().unwrap().clone();
 
     let res: Vec<MovieRow> = reader
         .records()
-       // .take(5)
+        // .take(5)
         .flat_map(|x| x)
-        .flat_map(|s| from_record(&s, &headers))
+        .flat_map(|s| parsing::from_record(&s, &headers))
         .flat_map(|x| x.validated_movie_row(&config.last_run))
         .collect();
 
-    for row in res {
-        println!("row: {:?}", row)
+    let distinct: HashSet<&Status> = res.iter().map(|x| &x.status).collect();
+
+    for row in distinct {
+        println!("{:?}", row)
     }
+
+    // for row in res {
+    //     println!("row: {:?}", row)
+    // }
 }
 
 struct Config {
@@ -108,10 +77,11 @@ struct Config {
     last_run: Option<NaiveDate>,
 }
 
+// TODO: use clap? Probably overkill.
 fn parse_args(args: &mut impl Iterator<Item = String>) -> Config {
     args.next();
 
-    let input_file = args.next().expect("msg");
+    let input_file = args.next().expect("missing input file!");
 
     let last_run = args.next().map(|s| {
         NaiveDate::parse_from_str(s.as_ref(), "%Y-%m").expect("invalid last run; expected YYYY-MM")
