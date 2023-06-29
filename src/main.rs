@@ -65,13 +65,6 @@ fn main() {
     // }
 }
 
-fn bs_add(map: &mut BTreeMap<i64, i64>, item: i64) {
-    map.entry(item)
-        .and_modify(|i| {
-            *i = *i * 2;
-        })
-        .or_insert(item * 2);
-}
 
 pub struct Config {
     input_file: String,
