@@ -1,5 +1,6 @@
 use chrono::NaiveDate;
 use csv::StringRecord;
+use kstring::KString;
 use serde::Deserialize;
 use std::collections::HashSet;
 
@@ -11,8 +12,8 @@ pub struct MovieRowRaw {
     genres: String,
     production_companies: String,
     release_date: NaiveDate,
-    budget: i128,
-    revenue: i128,
+    budget: i64,
+    revenue: i64,
     #[serde(deserialize_with = "csv::invalid_option", rename = "popularity")]
     avg_populatarity: Option<f32>,
     status: String,
@@ -35,7 +36,7 @@ impl MovieRowRaw {
         {
             // pull genres and production companies.
             Some(Movie {
-                id: self.id.clone(),
+                id: KString::from(&self.id),
                 genres: convert_json_to_set(&self.genres),
                 production_companies: convert_json_to_set(&self.production_companies),
                 release_date: self.release_date,
@@ -51,7 +52,7 @@ impl MovieRowRaw {
     }
 }
 
-fn convert_json_to_set(s: &str) -> HashSet<String> {
+fn convert_json_to_set(s: &str) -> HashSet<i64> {
     let s = s.replace("'", "\"");
     //println!("raw: {}", s);
     let parsed = json::parse(&s);
@@ -59,7 +60,7 @@ fn convert_json_to_set(s: &str) -> HashSet<String> {
     parsed
         .map(|v| {
             v.members()
-                .flat_map(|obj| obj["id"].as_i32().map(|x| x.to_string()))
+                .flat_map(|obj| obj["id"].as_i64().map(|x| x))
                 .collect()
         })
         .unwrap_or(HashSet::new())
