@@ -24,7 +24,6 @@ fn main() {
         println!("{:?}", row)
     }
 
-    let mut prod_details: Vec<ProdCompanyDetails> = Vec::new();
     let mut acc: BucketYearMap<ProdCompanyDetails> = BTreeMap::new();
 
     let res: Vec<ProdCompanyDetails> = res
@@ -32,27 +31,30 @@ fn main() {
         .flat_map(|movie| movie_to_details(movie))
         .collect();
 
-    // let x: &BucketYearMap<'_, ProdCompanyDetails> = res
+// TODO: figure how to get fold + &mut to work.
+    // let x: &BucketYearMap<ProdCompanyDetails> = res
     //     .iter()
-    //     .fold(&acc, |mut acc, detail| add_detail(acc, detail));
+    //     .fold(acc.borrow_mut(), |mut acc, detail| add_detail(acc, detail));
 
     // let barrowed_acc = acc.borrow_mut();
     //let _ = res.iter().for_each(|detail| { add_detail(acc, detail); } );
 
-    {
-        for detail in &res {
-            add_detail(&mut acc, detail);
-        }
+    
+    for detail in &res {
+        add_detail(&mut acc, detail);
     }
+    
     //let flat = flatten_bucket_year_map(&acc);
 
-    let first_couple: Vec<_> = acc
-        .iter()
-        .filter(|(year, months)| !months.iter().all(|x| x.is_empty()))
-        .take(5)
-        .collect();
+    // let res: Vec<_> = acc
+    //     .iter()
+    //     .filter(|(year, months)| !months.iter().all(|x| x.is_empty()))
+    //   //  .take(5)
+    //     .collect();
 
-    first_couple.iter().for_each(|(year, v)| {
+    let flattened = flatten_bucket_year_map(&acc);
+
+    flattened.iter().take(5).for_each(|(year, v)| {
         println!("year {year}:");
         let remove_empty: Vec<_> = v.iter().filter(|x| !x.is_empty()).collect();
         println!("{:?}", remove_empty)
@@ -89,55 +91,55 @@ fn parse_args(args: &mut impl Iterator<Item = String>) -> Config {
 
 mod query {
     use chrono::{Datelike, NaiveDate};
-    use std::collections::{BTreeMap, HashMap};
+    use itertools::Itertools;
+    use std::{collections::{BTreeMap, HashMap}, rc::Rc};
 
     // use self::by_production_companies::prod_company_details;
 
     pub trait ById {
         fn id(&self) -> i64;
         fn date(&self) -> &NaiveDate;
-        fn sum(&self, other: &Self) -> Box<Self>;
+        fn sum(&self, other: &Self) -> Rc<Self>;
         // fn zero(&self) -> Box<Self>;
     }
 
-    pub type BucketYearMap<T> = BTreeMap<i32, [HashMap<i64, Box<T>>; 12]>;
-    pub type BucketYearMapFlattned<T> = BTreeMap<i32, [Vec<Box<T>>; 12]>;
+    pub type BucketYearMap<T> = BTreeMap<i32, [HashMap<i64, Rc<T>>; 12]>;
+    pub type BucketYearMapFlattned<T> = BTreeMap<i32, Vec<Vec<Rc<T>>>>;
 
-    pub fn add_detail<T: ById + Clone>(map: &mut BucketYearMap<T>, detail: &T) {
+    pub fn add_detail<'a, T: ById + Clone>(map: &'a mut BucketYearMap<T>, detail: &T) -> &'a mut BucketYearMap<T> {
         let year = detail.date().year();
         let month: usize = (detail.date().month() - 1).try_into().unwrap_or(0);
-        // let mut tmp: T = detail.zero(); // = detail.zero();
         map.entry(year)
             .and_modify(|x| {
-                // todo: move back to using entries.
-                //    let e = x[month]
-                //         .entry(detail.id());
-                if x[month].contains_key(&detail.id()) {
-                    let old_value = &x[month][&detail.id()];
-                    let tmp = detail.sum(&old_value);
-                    // std::mem::replace(x[month][&detail.id()], detail);
-                    x[month].insert(detail.id(), tmp);
-                } else {
-                    x[month].insert(detail.id(), Box::new(detail.clone()));
-                }
+                x[month]
+                    .entry(detail.id())
+                    .and_modify(|x| { *x =  x.sum(detail); })
+                    .or_insert(Rc::new(detail.clone()));
             })
             .or_insert(Default::default());
+
+        map
     }
 
-    // pub fn flatten_bucket_year_map<T>(
-    //     map: &BucketYearMap<T>,
-    // ) -> BucketYearMapFlattned<T> {
-    //     map.iter()
-    //         .map(|(year, months)| {
-    //             // TODO: figure out how to without cloning.
-    //             let flatten: [Vec<Box<T>>; 12] = months.clone().map(|m| m.into_values().collect());
-    //             (*year, flatten)
-    //         })
-    //         .collect()
-    // }
+    pub fn flatten_bucket_year_map<T>(
+        map: &BucketYearMap<T>,
+    ) -> BucketYearMapFlattned<T> {
+        map.iter()
+            .filter(|(year, months)| !months.iter().all(|x| x.is_empty()))
+            .map(|(year, months)| {
+                let flatten = months
+                .iter()
+                .filter(|x| !x.is_empty())
+                .map(|m| m.iter().map(|x| x.1.clone()).collect_vec())
+                .collect_vec();
+
+                (*year, flatten)
+            })
+            .collect()
+    }
 
     pub mod by_production_companies {
-        use std::collections::HashSet;
+        use std::{collections::HashSet, rc::Rc};
 
         use chrono::NaiveDate;
         use kstring::KString;
@@ -190,7 +192,7 @@ mod query {
                 &self.date
             }
 
-            fn sum(&self, other: &Self) -> Box<Self> {
+            fn sum(&self, other: &Self) -> Rc<Self> {
                 let details = ProdCompanyDetails {
                     id: self.id,
                     date: self.date.clone(),
@@ -215,7 +217,7 @@ mod query {
                     },
                 };
 
-                Box::new(details)
+                Rc::new(details)
             }
         }
     }
