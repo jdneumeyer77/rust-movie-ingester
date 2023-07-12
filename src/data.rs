@@ -48,7 +48,6 @@ pub fn read_movie_metadata(file: &File, config: &Config) -> Vec<Movie> {
 
     reader
         .records()
-        // .take(5)
         .flat_map(|x| x)
         .flat_map(|s| parsing::from_record(&s, &headers))
         .flat_map(|x| x.to_movie(&config.last_run))

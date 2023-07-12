@@ -26,7 +26,7 @@ fn main() {
 
     let mut acc: BucketYearMap<ProdCompanyDetails> = BTreeMap::new();
 
-    let res: Vec<ProdCompanyDetails> = res
+    let res: Vec<_> = res
         .iter()
         .flat_map(|movie| movie_to_details(movie))
         .collect();
@@ -80,7 +80,9 @@ fn parse_args(args: &mut impl Iterator<Item = String>) -> Config {
     let input_file = args.next().expect("missing input file!");
 
     let last_run = args.next().map(|s| {
-        NaiveDate::parse_from_str(s.as_ref(), "%Y-%m").expect("invalid last run; expected YYYY-MM")
+        println!("last run: {s}");
+        let expand_date: String = format!("{s}-01");
+        NaiveDate::parse_from_str(&expand_date, "%Y-%m-%d").expect("invalid last run; expected YYYY-MM")
     });
 
     Config {
@@ -89,136 +91,42 @@ fn parse_args(args: &mut impl Iterator<Item = String>) -> Config {
     }
 }
 
-mod query {
-    use chrono::{Datelike, NaiveDate};
-    use itertools::Itertools;
-    use std::{collections::{BTreeMap, HashMap}, rc::Rc};
+mod query;
 
-    // use self::by_production_companies::prod_company_details;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::*;
 
-    pub trait ById {
-        fn id(&self) -> i64;
-        fn date(&self) -> &NaiveDate;
-        fn sum(&self, other: &Self) -> Rc<Self>;
-        // fn zero(&self) -> Box<Self>;
-    }
+    #[test]
+    fn test_parse_args() {
+        // Test case 1: Valid input arguments
+        let args = &mut vec![
+            "program_name".to_string(),
+            "input.txt".to_string(),
+            "2021-07".to_string(),
+        ]
+        .into_iter();
+        let config = parse_args(args);
+        assert_eq!(config.input_file, "input.txt");
+        assert_eq!(config.last_run.unwrap().year(), 2021);
+        assert_eq!(config.last_run.unwrap().month(), 7);
 
-    pub type BucketYearMap<T> = BTreeMap<i32, [HashMap<i64, Rc<T>>; 12]>;
-    pub type BucketYearMapFlattned<T> = BTreeMap<i32, Vec<Vec<Rc<T>>>>;
+        // Test case 2: Missing input file argument
+        // let args = &mut vec!["program_name".to_string()].into_iter();
+        // let config = parse_args(args);
+        // assert_eq!(config.input_file, ""); // Assuming empty string is the default value for input_file
+        // assert_eq!(config.last_run, None);
 
-    pub fn add_detail<'a, T: ById + Clone>(map: &'a mut BucketYearMap<T>, detail: &T) -> &'a mut BucketYearMap<T> {
-        let year = detail.date().year();
-        let month: usize = (detail.date().month() - 1).try_into().unwrap_or(0);
-        map.entry(year)
-            .and_modify(|x| {
-                x[month]
-                    .entry(detail.id())
-                    .and_modify(|x| { *x =  x.sum(detail); })
-                    .or_insert(Rc::new(detail.clone()));
-            })
-            .or_insert(Default::default());
-
-        map
-    }
-
-    pub fn flatten_bucket_year_map<T>(
-        map: &BucketYearMap<T>,
-    ) -> BucketYearMapFlattned<T> {
-        map.iter()
-            .filter(|(year, months)| !months.iter().all(|x| x.is_empty()))
-            .map(|(year, months)| {
-                let flatten = months
-                .iter()
-                .filter(|x| !x.is_empty())
-                .map(|m| m.iter().map(|x| x.1.clone()).collect_vec())
-                .collect_vec();
-
-                (*year, flatten)
-            })
-            .collect()
-    }
-
-    pub mod by_production_companies {
-        use std::{collections::HashSet, rc::Rc};
-
-        use chrono::NaiveDate;
-        use kstring::KString;
-
-        use crate::data::Movie;
-
-        #[derive(Debug, Clone)]
-        pub struct ProdCompanyMetadata {
-            movieIds: HashSet<KString>,
-            genreIds: HashSet<i64>,
-        }
-        #[derive(Debug, Clone)]
-        pub struct ProdCompanyDetails {
-            id: i64,
-            date: NaiveDate, // does this make sense...
-            budget: i64,
-            profit: i64,
-            revenue: i64,
-            avg_populatarity: f32,
-            metadata: ProdCompanyMetadata,
-        }
-
-        // impl From<&Movie> for Vec<ProdCompanyDetails> {
-        pub fn movie_to_details(value: &Movie) -> Vec<ProdCompanyDetails> {
-            value
-                .production_companies
-                .iter()
-                .map(|prod| ProdCompanyDetails {
-                    id: *prod,
-                    date: value.release_date,
-                    budget: value.budget,
-                    profit: value.profit,
-                    revenue: value.revenue,
-                    avg_populatarity: value.avg_populatarity,
-                    metadata: ProdCompanyMetadata {
-                        movieIds: HashSet::from([value.id.clone(); 1]),
-                        genreIds: value.genres.clone(),
-                    },
-                })
-                .collect()
-        }
-        // }
-
-        impl super::ById for ProdCompanyDetails {
-            fn id(&self) -> i64 {
-                self.id
-            }
-
-            fn date(&self) -> &NaiveDate {
-                &self.date
-            }
-
-            fn sum(&self, other: &Self) -> Rc<Self> {
-                let details = ProdCompanyDetails {
-                    id: self.id,
-                    date: self.date.clone(),
-                    budget: self.budget + other.budget,
-                    profit: self.profit + other.profit,
-                    revenue: self.revenue + other.revenue,
-                    avg_populatarity: (self.avg_populatarity + other.avg_populatarity) / 2.0,
-                    // probably not the best performance... but immutable.
-                    metadata: ProdCompanyMetadata {
-                        movieIds: self
-                            .metadata
-                            .movieIds
-                            .union(&other.metadata.movieIds)
-                            .cloned()
-                            .collect(),
-                        genreIds: self
-                            .metadata
-                            .genreIds
-                            .union(&other.metadata.genreIds)
-                            .copied()
-                            .collect(),
-                    },
-                };
-
-                Rc::new(details)
-            }
-        }
+        // Test case 3: Invalid last run argument format
+        // let args = &mut vec![
+        //     "program_name".to_string(),
+        //     "input.txt".to_string(),
+        //     "2021-13".to_string(),
+        // ]
+        // .into_iter();
+        // let result = std::panic::catch_unwind(|| parse_args(args));
+        // assert!(result.is_err());
     }
 }
+
