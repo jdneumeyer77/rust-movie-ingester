@@ -31,7 +31,7 @@ fn main() {
         .flat_map(|movie| movie_to_details(movie))
         .collect();
 
-// TODO: figure how to get fold + &mut to work.
+    // TODO: figure how to get fold + &mut to work.
     // let x: &BucketYearMap<ProdCompanyDetails> = res
     //     .iter()
     //     .fold(acc.borrow_mut(), |mut acc, detail| add_detail(acc, detail));
@@ -39,11 +39,10 @@ fn main() {
     // let barrowed_acc = acc.borrow_mut();
     //let _ = res.iter().for_each(|detail| { add_detail(acc, detail); } );
 
-    
     for detail in &res {
         add_detail(&mut acc, detail);
     }
-    
+
     //let flat = flatten_bucket_year_map(&acc);
 
     // let res: Vec<_> = acc
@@ -56,8 +55,8 @@ fn main() {
 
     flattened.iter().take(5).for_each(|(year, v)| {
         println!("year {year}:");
-        let remove_empty: Vec<_> = v.iter().filter(|x| !x.is_empty()).collect();
-        println!("{:?}", remove_empty)
+        //  let remove_empty: Vec<_> = v.iter().filter(|x| !x.is_empty()).collect();
+        println!("{:?}", v)
     });
 
     //.fold(&mut acc, |&mut acc, next| add_detail(acc, &next));
@@ -66,7 +65,6 @@ fn main() {
     //     println!("row: {:?}", row)
     // }
 }
-
 
 pub struct Config {
     input_file: String,
@@ -82,7 +80,8 @@ fn parse_args(args: &mut impl Iterator<Item = String>) -> Config {
     let last_run = args.next().map(|s| {
         println!("last run: {s}");
         let expand_date: String = format!("{s}-01");
-        NaiveDate::parse_from_str(&expand_date, "%Y-%m-%d").expect("invalid last run; expected YYYY-MM")
+        NaiveDate::parse_from_str(&expand_date, "%Y-%m-%d")
+            .expect("invalid last run; expected YYYY-MM")
     });
 
     Config {
@@ -129,4 +128,3 @@ mod tests {
         // assert!(result.is_err());
     }
 }
-

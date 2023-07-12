@@ -26,18 +26,20 @@ pub fn movie_to_details(value: &Movie) -> Vec<Rc<ProdCompanyDetails>> {
     value
         .production_companies
         .iter()
-        .map(|prod| Rc::new(ProdCompanyDetails {
-            id: *prod,
-            date: value.release_date,
-            budget: value.budget,
-            profit: value.profit,
-            revenue: value.revenue,
-            avg_populatarity: value.avg_populatarity,
-            metadata: ProdCompanyMetadata {
-                movieIds: HashSet::from([value.id.clone(); 1]),
-                genreIds: value.genres.clone(),
-            },
-        }))
+        .map(|prod| {
+            Rc::new(ProdCompanyDetails {
+                id: *prod,
+                date: value.release_date,
+                budget: value.budget,
+                profit: value.profit,
+                revenue: value.revenue,
+                avg_populatarity: value.avg_populatarity,
+                metadata: ProdCompanyMetadata {
+                    movieIds: HashSet::from([value.id.clone(); 1]),
+                    genreIds: value.genres.clone(),
+                },
+            })
+        })
         .collect()
 }
 // }
